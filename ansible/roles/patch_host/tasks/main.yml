@@ -1,0 +1,71 @@
+---
+# Patch host role - applies updates and handles reboot
+
+- name: Pre-patch checks
+  block:
+    - name: Check current kernel
+      ansible.builtin.command: uname -r
+      register: pre_kernel
+      changed_when: false
+
+    - name: Check available updates
+      ansible.builtin.command: dnf check-update
+      register: updates_available
+      changed_when: false
+      failed_when: updates_available.rc not in [0, 100]
+
+    - name: Set update flag
+      ansible.builtin.set_fact:
+        has_updates: "{{ updates_available.rc == 100 }}"
+
+- name: Apply updates
+  when: has_updates
+  block:
+    - name: Run dnf upgrade
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+        update_cache: true
+      register: upgrade_result
+
+    - name: Check if reboot needed
+      ansible.builtin.shell: |
+        needs-restarting -r
+      register: reboot_check
+      failed_when: false
+      changed_when: false
+
+    - name: Set reboot flag
+      ansible.builtin.set_fact:
+        needs_reboot: "{{ reboot_check.rc == 1 }}"
+
+- name: Handle reboot
+  when: needs_reboot | default(false)
+  block:
+    - name: Reboot the system
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+        msg: "Rebooting for updates"
+        post_reboot_delay: 30
+
+- name: Post-patch verification
+  block:
+    - name: Check post-patch kernel
+      ansible.builtin.command: uname -r
+      register: post_kernel
+      changed_when: false
+
+    - name: Verify no pending updates
+      ansible.builtin.command: dnf check-update
+      register: post_updates
+      changed_when: false
+      failed_when: false
+
+    - name: Set verification results
+      ansible.builtin.set_fact:
+        patch_verification:
+          pre_kernel: "{{ pre_kernel.stdout }}"
+          post_kernel: "{{ post_kernel.stdout }}"
+          kernel_updated: "{{ pre_kernel.stdout != post_kernel.stdout }}"
+          pending_updates: "{{ post_updates.rc == 100 }}"
+          success: "{{ post_updates.rc == 0 }}"

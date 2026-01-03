@@ -1,0 +1,76 @@
+---
+# Configure host to use internal RPM repository
+
+- name: Determine OS major version
+  ansible.builtin.set_fact:
+    os_major: "{{ ansible_distribution_major_version }}"
+
+- name: Set internal repo server URL
+  ansible.builtin.set_fact:
+    internal_repo_url: >-
+      {{
+        internal_repo_server_rhel8 if os_major == '8'
+        else internal_repo_server_rhel9
+      }}
+
+- name: Install CA certificate
+  when: internal_ca_cert is defined
+  block:
+    - name: Copy CA certificate
+      ansible.builtin.copy:
+        content: "{{ internal_ca_cert }}"
+        dest: "{{ internal_ca_cert_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Update CA trust
+
+    - name: Update CA trust
+      ansible.builtin.command: update-ca-trust extract
+      changed_when: true
+
+- name: Copy CA certificate from file
+  when:
+    - internal_ca_cert is not defined
+    - internal_ca_cert_file is defined
+  block:
+    - name: Copy CA certificate file
+      ansible.builtin.copy:
+        src: "{{ internal_ca_cert_file }}"
+        dest: "{{ internal_ca_cert_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Update CA trust
+
+- name: Disable external repositories
+  ansible.builtin.command: |
+    dnf config-manager --set-disabled '*'
+  changed_when: true
+  when: disable_external_repos | default(true)
+  tags: [configure]
+
+- name: Create internal repository configuration
+  ansible.builtin.template:
+    src: internal-repo.repo.j2
+    dest: /etc/yum.repos.d/internal-rhel{{ os_major }}.repo
+    owner: root
+    group: root
+    mode: "0644"
+  tags: [configure]
+
+- name: Clean dnf cache
+  ansible.builtin.command: dnf clean all
+  changed_when: true
+  tags: [configure]
+
+- name: Verify repository is accessible
+  ansible.builtin.command: dnf repolist
+  register: repolist_result
+  changed_when: false
+  tags: [verify]
+
+- name: Display configured repositories
+  ansible.builtin.debug:
+    msg: "{{ repolist_result.stdout_lines }}"
+  tags: [verify]

@@ -1,0 +1,261 @@
+---
+# Patch hosts using internal repositories
+#
+# Usage:
+#   ansible-playbook -i inventories/hosts.yml playbooks/patch_hosts.yml
+#
+# This playbook:
+# 1. Installs internal repo CA certificate
+# 2. Configures internal repository
+# 3. Runs dnf upgrade
+# 4. Reboots hosts if kernel was updated
+# 5. Waits for SSH to return
+# 6. Verifies patch results
+
+- name: Pre-patch - Collect baseline
+  hosts: rhel8_hosts:rhel9_hosts:testers
+  gather_facts: true
+  become: true
+
+  vars:
+    evidence_dir: "{{ playbook_dir }}/../artifacts/patch-evidence"
+
+  tasks:
+    - name: Ensure evidence directory exists
+      delegate_to: localhost
+      run_once: true
+      become: false
+      ansible.builtin.file:
+        path: "{{ evidence_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Collect pre-patch package list
+      ansible.builtin.shell: rpm -qa | sort
+      register: pre_patch_packages
+      changed_when: false
+
+    - name: Save pre-patch package list
+      delegate_to: localhost
+      become: false
+      ansible.builtin.copy:
+        content: "{{ pre_patch_packages.stdout }}"
+        dest: "{{ evidence_dir }}/{{ inventory_hostname }}-pre-patch-packages.txt"
+        mode: "0644"
+
+    - name: Record pre-patch kernel
+      ansible.builtin.command: uname -r
+      register: pre_patch_kernel
+      changed_when: false
+
+    - name: Record pre-patch os-release
+      ansible.builtin.slurp:
+        src: /etc/os-release
+      register: pre_patch_os_release
+
+    - name: Save pre-patch state
+      ansible.builtin.set_fact:
+        pre_patch_state:
+          kernel: "{{ pre_patch_kernel.stdout }}"
+          package_count: "{{ pre_patch_packages.stdout_lines | length }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+
+- name: Configure internal repository and patch
+  hosts: rhel8_hosts:rhel9_hosts:testers
+  gather_facts: true
+  become: true
+
+  vars:
+    # Determine internal repo server based on OS version
+    internal_repo_server: >-
+      {{
+        internal_repo_server_rhel8 if ansible_distribution_major_version == '8'
+        else internal_repo_server_rhel9
+      }}
+
+  roles:
+    - role: repo_client
+      tags: [configure]
+
+  tasks:
+    - name: Check for available updates
+      ansible.builtin.command: dnf check-update
+      register: check_update_result
+      changed_when: false
+      failed_when: check_update_result.rc not in [0, 100]
+
+    - name: Display available updates
+      ansible.builtin.debug:
+        msg: |
+          Available updates for {{ inventory_hostname }}:
+          {{ check_update_result.stdout }}
+      when: check_update_result.rc == 100
+
+    - name: Run dnf upgrade
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+        update_cache: true
+      register: dnf_upgrade_result
+      tags: [patch]
+
+    - name: Display upgrade result
+      ansible.builtin.debug:
+        var: dnf_upgrade_result
+      tags: [patch]
+
+    - name: Check if reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required_file
+
+    - name: Check if kernel was updated
+      ansible.builtin.shell: |
+        RUNNING=$(uname -r)
+        INSTALLED=$(rpm -q kernel --last | head -1 | awk '{print $1}' | sed 's/kernel-//')
+        if [ "$RUNNING" != "$INSTALLED" ]; then
+          echo "reboot_needed"
+        else
+          echo "no_reboot"
+        fi
+      register: kernel_check
+      changed_when: false
+
+    - name: Set reboot flag
+      ansible.builtin.set_fact:
+        needs_reboot: "{{ reboot_required_file.stat.exists or kernel_check.stdout == 'reboot_needed' }}"
+
+- name: Reboot hosts if needed
+  hosts: rhel8_hosts:rhel9_hosts:testers
+  gather_facts: false
+  become: true
+  serial: 5  # Reboot 5 hosts at a time
+
+  tasks:
+    - name: Reboot host
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+        msg: "Rebooting for kernel/package updates"
+        post_reboot_delay: 30
+      when: needs_reboot | default(false)
+      tags: [reboot]
+
+- name: Post-patch verification
+  hosts: rhel8_hosts:rhel9_hosts:testers
+  gather_facts: true
+  become: true
+
+  vars:
+    evidence_dir: "{{ playbook_dir }}/../artifacts/patch-evidence"
+
+  tasks:
+    - name: Collect post-patch package list
+      ansible.builtin.shell: rpm -qa | sort
+      register: post_patch_packages
+      changed_when: false
+
+    - name: Save post-patch package list
+      delegate_to: localhost
+      become: false
+      ansible.builtin.copy:
+        content: "{{ post_patch_packages.stdout }}"
+        dest: "{{ evidence_dir }}/{{ inventory_hostname }}-post-patch-packages.txt"
+        mode: "0644"
+
+    - name: Record post-patch kernel
+      ansible.builtin.command: uname -r
+      register: post_patch_kernel
+      changed_when: false
+
+    - name: Record post-patch os-release
+      ansible.builtin.slurp:
+        src: /etc/os-release
+      register: post_patch_os_release
+
+    - name: Check for failed packages
+      ansible.builtin.shell: |
+        dnf history info last 2>&1 | grep -i "failed\|error" || echo "no_failures"
+      register: failed_check
+      changed_when: false
+      failed_when: false
+
+    - name: Generate diff of package changes
+      delegate_to: localhost
+      become: false
+      ansible.builtin.shell: |
+        diff -u \
+          "{{ evidence_dir }}/{{ inventory_hostname }}-pre-patch-packages.txt" \
+          "{{ evidence_dir }}/{{ inventory_hostname }}-post-patch-packages.txt" \
+          > "{{ evidence_dir }}/{{ inventory_hostname }}-package-diff.txt" || true
+      changed_when: false
+
+    - name: Build verification report
+      ansible.builtin.set_fact:
+        patch_report:
+          host: "{{ inventory_hostname }}"
+          pre_kernel: "{{ pre_patch_state.kernel }}"
+          post_kernel: "{{ post_patch_kernel.stdout }}"
+          kernel_changed: "{{ pre_patch_state.kernel != post_patch_kernel.stdout }}"
+          pre_package_count: "{{ pre_patch_state.package_count }}"
+          post_package_count: "{{ post_patch_packages.stdout_lines | length }}"
+          rebooted: "{{ needs_reboot | default(false) }}"
+          failed_packages: "{{ 'none' if 'no_failures' in failed_check.stdout else failed_check.stdout }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+
+    - name: Save verification report
+      delegate_to: localhost
+      become: false
+      ansible.builtin.copy:
+        content: "{{ patch_report | to_nice_json }}"
+        dest: "{{ evidence_dir }}/{{ inventory_hostname }}-patch-report.json"
+        mode: "0644"
+
+    - name: Display verification summary
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Patch Verification: {{ inventory_hostname }}
+          ========================================
+          Kernel: {{ patch_report.pre_kernel }} -> {{ patch_report.post_kernel }}
+          Kernel Changed: {{ patch_report.kernel_changed }}
+          Package Count: {{ patch_report.pre_package_count }} -> {{ patch_report.post_package_count }}
+          Rebooted: {{ patch_report.rebooted }}
+          Failed Packages: {{ patch_report.failed_packages }}
+          ========================================
+
+- name: Patch summary
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    evidence_dir: "{{ playbook_dir }}/../artifacts/patch-evidence"
+
+  tasks:
+    - name: Find patch reports
+      ansible.builtin.find:
+        paths: "{{ evidence_dir }}"
+        patterns: "*-patch-report.json"
+      register: report_files
+
+    - name: Load all reports
+      ansible.builtin.slurp:
+        src: "{{ item.path }}"
+      register: report_contents
+      loop: "{{ report_files.files }}"
+
+    - name: Parse reports
+      ansible.builtin.set_fact:
+        all_reports: "{{ report_contents.results | map(attribute='content') | map('b64decode') | map('from_json') | list }}"
+
+    - name: Display summary
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Patch Operation Summary
+          ========================================
+          Total hosts patched: {{ all_reports | length }}
+          Hosts rebooted: {{ all_reports | selectattr('rebooted', 'equalto', true) | list | length }}
+          Kernel changes: {{ all_reports | selectattr('kernel_changed', 'equalto', true) | list | length }}
+          
+          Evidence location: {{ evidence_dir }}
+          ========================================

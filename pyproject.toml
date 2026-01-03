@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "airgapped-rpm-repo-lite"
+version = "1.0.0"
+description = "Lightweight manifest-driven RPM synchronization for air-gapped environments"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Binhex", email = "admin@binhex.io"}
+]
+keywords = ["rpm", "airgap", "patching", "rhel", "dnf"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
+
+[project.scripts]
+rpm-manifest-collect = "src.manifest_tools.collector:main"
+rpm-manifest-merge = "src.manifest_tools.merger:main"
+rpm-manifest-validate = "src.manifest_tools.validator:main"
+rpm-bundle-build = "src.bundle_builder.builder:main"
+
+[project.urls]
+Homepage = "https://github.com/binhex/airgapped-rpm-repo-lite"
+Documentation = "https://github.com/binhex/airgapped-rpm-repo-lite/tree/main/docs"
+Repository = "https://github.com/binhex/airgapped-rpm-repo-lite"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true

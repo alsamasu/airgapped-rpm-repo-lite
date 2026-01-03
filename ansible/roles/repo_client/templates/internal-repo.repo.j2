@@ -1,0 +1,15 @@
+# Internal RHEL {{ os_major }} Repository
+# Managed by Ansible - airgapped-rpm-repo-lite
+# Generated: {{ ansible_date_time.iso8601 }}
+
+[internal-rhel{{ os_major }}]
+name=Internal RHEL {{ os_major }} Repository
+baseurl={{ internal_repo_url }}/repos/rhel{{ os_major }}/current
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+sslverify=1
+{% if internal_ca_cert_path is defined %}
+sslcacert={{ internal_ca_cert_path }}
+{% endif %}
+metadata_expire=1d

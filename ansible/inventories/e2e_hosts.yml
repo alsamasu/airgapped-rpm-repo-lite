@@ -1,0 +1,41 @@
+---
+# E2E test inventory for airgapped-rpm-repo-lite
+# Uses vSphere test VMs
+
+all:
+  children:
+    testers:
+      hosts:
+        rhel8-10-tester:
+          ansible_host: "{{ lookup('env', 'RHEL8_TESTER_IP') | default('192.168.100.108', true) }}"
+          os_major: 8
+          os_minor: 10
+        rhel9-6-tester:
+          ansible_host: "{{ lookup('env', 'RHEL9_TESTER_IP') | default('192.168.100.96', true) }}"
+          os_major: 9
+          os_minor: 6
+
+    internal_servers:
+      children:
+        rhel8_server:
+          hosts:
+            int-rhel8:
+              ansible_host: "{{ lookup('env', 'INT_RHEL8_IP') | default('192.168.100.18', true) }}"
+        rhel9_server:
+          hosts:
+            int-rhel9:
+              ansible_host: "{{ lookup('env', 'INT_RHEL9_IP') | default('192.168.100.19', true) }}"
+
+  vars:
+    ansible_user: root
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+    # E2E test specific paths
+    manifest_output_dir: /tmp/e2e-manifests
+    bundle_output_dir: /tmp/e2e-bundles
+    evidence_dir: /tmp/e2e-evidence
+
+    # Internal repo URLs for testing
+    internal_repo_server_rhel8: https://int-rhel8.lab.local
+    internal_repo_server_rhel9: https://int-rhel9.lab.local

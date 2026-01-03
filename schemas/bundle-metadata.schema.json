@@ -1,0 +1,155 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://binhex.io/schemas/rpm-bundle-metadata/v1",
+  "title": "RPM Bundle Metadata",
+  "description": "Metadata schema for Policy B bundle packages",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "bundle_id",
+    "os_major",
+    "created_at",
+    "builder_host",
+    "manifests_used",
+    "packages",
+    "checksums"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version for forward compatibility"
+    },
+    "bundle_id": {
+      "type": "string",
+      "pattern": "^bundle-rhel[89]-[0-9]{8}T[0-9]{6}Z$",
+      "description": "Unique bundle identifier (bundle-rhelX-YYYYMMDDTHHMMSSZ)"
+    },
+    "os_major": {
+      "type": "integer",
+      "enum": [8, 9],
+      "description": "Target OS major version"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Bundle creation timestamp"
+    },
+    "builder_host": {
+      "type": "string",
+      "description": "Hostname of the external builder"
+    },
+    "manifests_used": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["host_id", "manifest_hash"],
+        "properties": {
+          "host_id": {
+            "type": "string"
+          },
+          "manifest_hash": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "os_minor": {
+            "type": "integer"
+          }
+        }
+      },
+      "description": "Manifests consumed during bundle build"
+    },
+    "packages": {
+      "type": "object",
+      "required": ["total_count", "update_count", "dependency_count", "size_bytes"],
+      "properties": {
+        "total_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of RPMs in bundle"
+        },
+        "update_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of direct update RPMs"
+        },
+        "dependency_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of dependency RPMs"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total size of all RPMs in bytes"
+        }
+      }
+    },
+    "package_list": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["nevra", "type", "sha256"],
+        "properties": {
+          "nevra": {
+            "type": "string",
+            "description": "Full NEVRA of the package"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["update", "dependency", "security"],
+            "description": "Why this package was included"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "size_bytes": {
+            "type": "integer"
+          },
+          "required_by": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of host_ids that need this package"
+          },
+          "advisory_id": {
+            "type": "string",
+            "description": "Associated security advisory if applicable"
+          }
+        }
+      }
+    },
+    "host_package_map": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "description": "Mapping of host_id to list of package NEVRAs needed"
+    },
+    "checksums": {
+      "type": "object",
+      "required": ["algorithm", "bundle_hash"],
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "const": "sha256"
+        },
+        "bundle_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA256 hash of the final bundle archive"
+        },
+        "repodata_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "build_log": {
+      "type": "string",
+      "description": "Path to build log file within bundle"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,149 @@
+---
+# Collect host manifests for Policy B bundle building
+#
+# Usage:
+#   ansible-playbook -i inventories/hosts.yml playbooks/collect_manifests.yml
+#
+# Collects manifest from all hosts in rhel8_hosts and rhel9_hosts groups
+
+- name: Collect RPM manifests from hosts
+  hosts: rhel8_hosts:rhel9_hosts:testers
+  gather_facts: true
+  become: false
+
+  vars:
+    manifest_local_dir: "{{ playbook_dir }}/../artifacts/manifests"
+    collector_version: "1.0.0"
+
+  tasks:
+    - name: Ensure manifest collection directory exists locally
+      delegate_to: localhost
+      run_once: true
+      become: false
+      ansible.builtin.file:
+        path: "{{ manifest_local_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Get OS release information
+      ansible.builtin.slurp:
+        src: /etc/os-release
+      register: os_release_content
+
+    - name: Parse OS release
+      ansible.builtin.set_fact:
+        os_info: "{{ os_release_content.content | b64decode | community.general.jc('ini') }}"
+
+    - name: Get system architecture
+      ansible.builtin.command: uname -m
+      register: uname_result
+      changed_when: false
+
+    - name: Get kernel version
+      ansible.builtin.command: uname -r
+      register: kernel_result
+      changed_when: false
+
+    - name: Get enabled repositories
+      ansible.builtin.command: dnf repolist --enabled -v
+      register: repolist_result
+      changed_when: false
+
+    - name: Parse enabled repositories
+      ansible.builtin.set_fact:
+        enabled_repos: "{{ enabled_repos | default([]) + [{'id': item.split(':')[1].strip().split('/')[0], 'name': item.split(':')[1].strip()}] }}"
+      loop: "{{ repolist_result.stdout_lines | select('match', '^Repo-id') | list }}"
+      when: "':' in item"
+
+    - name: Get installed RPMs with NEVRA
+      ansible.builtin.shell: |
+        rpm -qa --queryformat '%{NAME}\t%{EPOCH}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\n'
+      register: rpm_query_result
+      changed_when: false
+
+    - name: Parse installed RPMs
+      ansible.builtin.set_fact:
+        installed_rpms: >-
+          {{
+            rpm_query_result.stdout_lines | map('regex_replace',
+              '^([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]+)\t([^\t]+)$',
+              '{"name": "\1", "epoch": "\2", "version": "\3", "release": "\4", "arch": "\5"}'
+            ) | map('from_json') | list
+          }}
+
+    - name: Fix epoch values
+      ansible.builtin.set_fact:
+        installed_rpms_fixed: >-
+          {{
+            installed_rpms | map('combine', {
+              'epoch': item.epoch | regex_replace('^\(none\)$', '0'),
+              'nevra': (item.name ~ '-' ~ (item.epoch if item.epoch != '(none)' and item.epoch != '0' else '') ~ ((':' if item.epoch != '(none)' and item.epoch != '0' else '')) ~ item.version ~ '-' ~ item.release ~ '.' ~ item.arch)
+            }) | list
+          }}
+      loop: "{{ installed_rpms }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Build manifest
+      ansible.builtin.set_fact:
+        host_manifest:
+          schema_version: "1.0"
+          host_id: "{{ ansible_fqdn | default(ansible_hostname) }}"
+          os:
+            name: "{{ os_info.NAME | default('Red Hat Enterprise Linux') | regex_replace('\"', '') }}"
+            major: "{{ (os_info.VERSION_ID | default('9.0') | regex_replace('\"', '')).split('.')[0] | int }}"
+            minor: "{{ (os_info.VERSION_ID | default('9.0') | regex_replace('\"', '')).split('.')[1] | default('0') | int }}"
+            id: "{{ os_info.ID | default('rhel') | regex_replace('\"', '') }}"
+          arch: "{{ uname_result.stdout }}"
+          kernel_version: "{{ kernel_result.stdout }}"
+          enabled_repos: "{{ enabled_repos | default([]) }}"
+          installed_rpms: "{{ installed_rpms_fixed | default(installed_rpms) }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+          collector_version: "{{ collector_version }}"
+
+    - name: Write manifest to local file
+      delegate_to: localhost
+      become: false
+      ansible.builtin.copy:
+        content: "{{ host_manifest | to_nice_json }}"
+        dest: "{{ manifest_local_dir }}/{{ ansible_hostname }}-manifest.json"
+        mode: "0644"
+
+    - name: Display manifest summary
+      ansible.builtin.debug:
+        msg: |
+          Host: {{ ansible_hostname }}
+          OS: RHEL {{ host_manifest.os.major }}.{{ host_manifest.os.minor }}
+          Arch: {{ host_manifest.arch }}
+          Installed packages: {{ host_manifest.installed_rpms | length }}
+          Enabled repos: {{ host_manifest.enabled_repos | length }}
+          Manifest saved to: {{ manifest_local_dir }}/{{ ansible_hostname }}-manifest.json
+
+- name: Manifest collection summary
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    manifest_local_dir: "{{ playbook_dir }}/../artifacts/manifests"
+
+  tasks:
+    - name: Find collected manifests
+      ansible.builtin.find:
+        paths: "{{ manifest_local_dir }}"
+        patterns: "*-manifest.json"
+      register: manifest_files
+
+    - name: Display collection summary
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Manifest Collection Complete
+          ========================================
+          Total manifests collected: {{ manifest_files.files | length }}
+          Location: {{ manifest_local_dir }}
+          
+          Manifests:
+          {% for f in manifest_files.files %}
+          - {{ f.path | basename }}
+          {% endfor %}
+          ========================================

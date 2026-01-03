@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+.venv/
+
+# Ansible
+*.retry
+ansible/artifacts/manifests/*.json
+!ansible/artifacts/manifests/.gitkeep
+
+# Bundles and repos
+bundles/
+repos/
+*.tar.zst
+*.tar.gz
+*.zip
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.pem
+*.key
+*.crt
+!docs/*.crt
+secrets/
+.env
+
+# Test artifacts
+automation/artifacts/e2e-lite-proof/*.json
+automation/artifacts/e2e-lite-proof/*.log
+!automation/artifacts/e2e-lite-proof/.gitkeep
+
+# Temporary files
+tmp/
+temp/
+*.tmp

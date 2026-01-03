@@ -1,0 +1,138 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://binhex.io/schemas/rpm-manifest/v1",
+  "title": "RPM Host Manifest",
+  "description": "Canonical manifest schema for Policy B installed-package closure",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "host_id",
+    "os",
+    "arch",
+    "enabled_repos",
+    "installed_rpms",
+    "timestamp"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version for forward compatibility"
+    },
+    "host_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique identifier for the host (hostname or UUID)"
+    },
+    "os": {
+      "type": "object",
+      "required": ["major", "minor", "name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "OS name (e.g., 'Red Hat Enterprise Linux')"
+        },
+        "major": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 9,
+          "description": "OS major version (8 or 9)"
+        },
+        "minor": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "OS minor version"
+        },
+        "id": {
+          "type": "string",
+          "description": "OS ID from /etc/os-release (e.g., 'rhel')"
+        }
+      },
+      "additionalProperties": false
+    },
+    "arch": {
+      "type": "string",
+      "enum": ["x86_64", "aarch64"],
+      "description": "System architecture"
+    },
+    "kernel_version": {
+      "type": "string",
+      "description": "Current running kernel version (optional)"
+    },
+    "enabled_repos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Repository ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "Repository name"
+          },
+          "baseurl": {
+            "type": "string",
+            "description": "Base URL if available"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "List of enabled repositories on the host"
+    },
+    "installed_rpms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "epoch", "version", "release", "arch"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Package name"
+          },
+          "epoch": {
+            "type": "string",
+            "description": "Package epoch (0 if not set)"
+          },
+          "version": {
+            "type": "string",
+            "description": "Package version"
+          },
+          "release": {
+            "type": "string",
+            "description": "Package release"
+          },
+          "arch": {
+            "type": "string",
+            "description": "Package architecture"
+          },
+          "nevra": {
+            "type": "string",
+            "description": "Full NEVRA string (name-epoch:version-release.arch)"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "List of installed RPMs in NEVRA format"
+    },
+    "advisory_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of applicable advisory IDs (optional, if available)"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when manifest was collected"
+    },
+    "collector_version": {
+      "type": "string",
+      "description": "Version of the manifest collector tool"
+    }
+  },
+  "additionalProperties": false
+}

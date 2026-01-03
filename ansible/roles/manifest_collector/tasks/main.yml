@@ -1,0 +1,85 @@
+---
+# Manifest collector role - collects RPM manifest from host
+
+- name: Get OS release information
+  ansible.builtin.slurp:
+    src: /etc/os-release
+  register: os_release_raw
+
+- name: Get system architecture
+  ansible.builtin.command: uname -m
+  register: arch_result
+  changed_when: false
+
+- name: Get kernel version
+  ansible.builtin.command: uname -r
+  register: kernel_result
+  changed_when: false
+
+- name: Get enabled repositories
+  ansible.builtin.command: dnf repolist --enabled
+  register: repolist_result
+  changed_when: false
+
+- name: Get installed RPMs
+  ansible.builtin.shell: |
+    rpm -qa --queryformat '%{NAME}\t%{EPOCH}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\n'
+  register: rpm_result
+  changed_when: false
+
+- name: Parse OS release
+  ansible.builtin.set_fact:
+    os_release: "{{ os_release_raw.content | b64decode }}"
+
+- name: Extract OS info
+  ansible.builtin.set_fact:
+    os_name: "{{ os_release | regex_search('NAME=\"([^\"]+)\"', '\\1') | first | default('Unknown') }}"
+    os_version: "{{ os_release | regex_search('VERSION_ID=\"([^\"]+)\"', '\\1') | first | default('0.0') }}"
+    os_id: "{{ os_release | regex_search('ID=\"?([^\"\\n]+)\"?', '\\1') | first | default('unknown') }}"
+
+- name: Build manifest structure
+  ansible.builtin.set_fact:
+    host_manifest:
+      schema_version: "1.0"
+      host_id: "{{ ansible_fqdn | default(ansible_hostname) }}"
+      os:
+        name: "{{ os_name }}"
+        major: "{{ os_version.split('.')[0] | int }}"
+        minor: "{{ os_version.split('.')[1] | default('0') | int }}"
+        id: "{{ os_id }}"
+      arch: "{{ arch_result.stdout }}"
+      kernel_version: "{{ kernel_result.stdout }}"
+      enabled_repos: "{{ repolist_result.stdout_lines[1:] | map('split', ' ') | map('first') | list | map('regex_replace', '/.*', '') | list | map('community.general.dict_kv', 'id') | list }}"
+      installed_rpms: []
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      collector_version: "1.0.0"
+
+- name: Parse installed RPMs
+  ansible.builtin.set_fact:
+    parsed_rpms: >-
+      {{
+        rpm_result.stdout_lines | 
+        select('match', '^[^\t]+\t') |
+        map('split', '\t') |
+        selectattr('4', 'defined') |
+        list
+      }}
+
+- name: Build RPM list
+  ansible.builtin.set_fact:
+    rpm_list: >-
+      {{
+        parsed_rpms | map('community.general.dict_kv_list', ['name', 'epoch', 'version', 'release', 'arch']) | list
+      }}
+
+- name: Update manifest with RPMs
+  ansible.builtin.set_fact:
+    host_manifest: "{{ host_manifest | combine({'installed_rpms': rpm_list}) }}"
+
+- name: Write manifest to file
+  delegate_to: localhost
+  become: false
+  ansible.builtin.copy:
+    content: "{{ host_manifest | to_nice_json }}"
+    dest: "{{ manifest_output_dir | default(playbook_dir + '/../artifacts/manifests') }}/{{ ansible_hostname }}-manifest.json"
+    mode: "0644"
