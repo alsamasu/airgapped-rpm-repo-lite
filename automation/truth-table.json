@@ -1,0 +1,79 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-01-03T23:45:00Z",
+  "test_runs": [
+    {
+      "id": "2026-01-03-infra-blocked",
+      "date": "2026-01-03",
+      "status": "BLOCKED",
+      "reason": "vSphere infrastructure unavailable",
+      "artifacts_path": "artifacts/e2e-lite-proof/2026-01-03-infra-blocked/",
+      "infrastructure": {
+        "vcenter": {
+          "address": "192.168.1.98",
+          "status": "UNREACHABLE",
+          "error": "Connection timeout"
+        },
+        "esxi": {
+          "address": "192.168.1.99",
+          "status": "REACHABLE",
+          "sdk_version": "7.0.3.0",
+          "powercli_auth": "FAILED"
+        }
+      },
+      "vms_required": {
+        "ext-rhel8": "NOT_FOUND",
+        "ext-rhel9": "NOT_FOUND",
+        "int-rhel8": "NOT_FOUND",
+        "int-rhel9": "NOT_FOUND",
+        "rhel8-10-tester": "FOUND_NO_IP",
+        "rhel9-6-tester": "FOUND_NO_IP"
+      },
+      "tests": {
+        "manifest_collection": "BLOCKED",
+        "manifest_merge": "BLOCKED",
+        "bundle_build_rhel8": "BLOCKED",
+        "bundle_build_rhel9": "BLOCKED",
+        "bundle_transfer": "BLOCKED",
+        "bundle_import_rhel8": "BLOCKED",
+        "bundle_import_rhel9": "BLOCKED",
+        "repo_publish_rhel8": "BLOCKED",
+        "repo_publish_rhel9": "BLOCKED",
+        "patch_tester_rhel8": "BLOCKED",
+        "patch_tester_rhel9": "BLOCKED"
+      }
+    }
+  ],
+  "offline_validation": {
+    "date": "2026-01-03",
+    "python_syntax": {
+      "manifest_tools/collector.py": "PASS",
+      "manifest_tools/merger.py": "PASS",
+      "manifest_tools/validator.py": "PASS",
+      "bundle_builder/resolver.py": "PASS",
+      "bundle_builder/downloader.py": "PASS",
+      "bundle_builder/builder.py": "PASS"
+    },
+    "shell_syntax": {
+      "scripts/external/build_bundle.sh": "PASS",
+      "scripts/internal/import_bundle.sh": "PASS",
+      "scripts/internal/publish_repos.sh": "PASS",
+      "scripts/internal/verify_bundle.sh": "PASS",
+      "scripts/provision/install_python_deps.sh": "PASS"
+    },
+    "json_schemas": {
+      "schemas/manifest.schema.json": "PASS",
+      "schemas/bundle-metadata.schema.json": "PASS"
+    },
+    "ansible_playbooks": {
+      "ansible/playbooks/collect_manifests.yml": "PASS",
+      "ansible/playbooks/patch_hosts.yml": "PASS"
+    }
+  },
+  "next_steps": [
+    "Restart vCenter VM via ESXi web UI",
+    "Fix VMware Tools on tester VMs",
+    "Deploy ext-rhel8, ext-rhel9, int-rhel8, int-rhel9 from templates",
+    "Re-run E2E test when infrastructure available"
+  ]
+}

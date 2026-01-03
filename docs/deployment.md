@@ -283,3 +283,79 @@ cat /etc/yum.repos.d/internal-rhel8.repo
 # Test repository
 dnf repolist -v
 ```
+
+## Python Dependencies
+
+The Python scripts require dependencies to be installed on external builders and internal servers.
+
+### Install on RHEL Servers
+
+Use the provided provisioning script:
+
+```bash
+# Run as root
+/opt/airgapped-rpm-repo-lite/scripts/provision/install_python_deps.sh
+```
+
+This installs:
+- jsonschema (manifest validation)
+- requests (HTTP operations)
+- dnf-plugins-core (dependency resolution)
+
+### Air-gapped Internal Servers
+
+For internal servers without internet:
+
+1. Download wheels on external builder:
+```bash
+pip download -d /tmp/wheels jsonschema requests
+```
+
+2. Transfer wheels via media
+
+3. Install offline:
+```bash
+pip install --no-index --find-links=/tmp/wheels jsonschema requests
+```
+
+## vSphere Lab Environment (Testing)
+
+For E2E testing in vSphere environments:
+
+### Required VMs
+
+| VM Name | OS Version | Role | Network |
+|---------|------------|------|---------|
+| ext-rhel8 | RHEL 8.10 | External builder | Connected |
+| ext-rhel9 | RHEL 9.6 | External builder | Connected |
+| int-rhel8 | RHEL 8.x | Internal repo server | Air-gapped |
+| int-rhel9 | RHEL 9.x | Internal repo server | Air-gapped |
+| rhel8-tester | RHEL 8.10 | Test target | Air-gapped |
+| rhel9-tester | RHEL 9.6 | Test target | Air-gapped |
+
+### VM Specifications
+
+| Role | vCPU | RAM | Disk |
+|------|------|-----|------|
+| External Builder | 2 | 4GB | 100GB |
+| Internal Server | 2 | 4GB | 200GB |
+| Tester | 1 | 2GB | 40GB |
+
+### Network Configuration
+
+- **External Network:** VLAN with internet access, DHCP or static
+- **Internal Network:** Isolated VLAN, no internet routing
+- **Air-gap Simulation:** No routes between external and internal VLANs
+
+### VMware Tools
+
+VMware Tools must be installed on all VMs for:
+- IP address reporting
+- Graceful shutdown
+- Guest operations
+
+```bash
+# Install open-vm-tools
+dnf install -y open-vm-tools
+systemctl enable --now vmtoolsd
+```

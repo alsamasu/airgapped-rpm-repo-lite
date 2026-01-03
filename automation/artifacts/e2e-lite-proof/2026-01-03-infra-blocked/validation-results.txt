@@ -1,0 +1,33 @@
+Offline Validation Results
+==========================
+Date: 2026-01-03
+Environment: binhex-tools container
+
+Python Syntax Validation (py_compile)
+-------------------------------------
+src/manifest_tools/collector.py: OK
+src/manifest_tools/merger.py: OK
+src/manifest_tools/validator.py: OK
+src/bundle_builder/resolver.py: OK
+src/bundle_builder/downloader.py: OK
+src/bundle_builder/builder.py: OK
+
+Shell Script Validation (bash -n)
+---------------------------------
+scripts/external/build_bundle.sh: OK
+scripts/internal/import_bundle.sh: OK
+scripts/internal/publish_repos.sh: OK
+scripts/internal/verify_bundle.sh: OK
+scripts/provision/install_python_deps.sh: OK
+
+JSON Schema Validation
+----------------------
+schemas/manifest.schema.json: OK
+schemas/bundle-metadata.schema.json: OK
+
+Ansible Playbook Validation (YAML syntax)
+-----------------------------------------
+ansible/playbooks/collect_manifests.yml: OK
+ansible/playbooks/patch_hosts.yml: OK
+
+Summary: All code validation passed. E2E testing blocked by infrastructure.
